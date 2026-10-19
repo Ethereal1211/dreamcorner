@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dreamcorner-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dreamcorner}
+      POSTGRES_USER: ${POSTGRES_USER:-dreamcorner}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dreamcorner_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432}"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dreamcorner} -d ${POSTGRES_DB:-dreamcorner}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: dreamcorner-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-dreamcorner}:${POSTGRES_PASSWORD:-dreamcorner_password}@postgres:5432/${POSTGRES_DB:-dreamcorner}?schema=public
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL_NAME: ${AI_MODEL_NAME:-gpt-4o-mini}
+      AI_TEMPERATURE: ${AI_TEMPERATURE:-0.7}
+      AI_SYSTEM_PROMPT: ${AI_SYSTEM_PROMPT:-}
+      JWT_SECRET: ${JWT_SECRET:-change_this_to_a_random_secret}
+      APP_SECRET: ${APP_SECRET:-change_this_to_a_random_secret}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    volumes:
+      - ../uploads:/app/uploads
+
+volumes:
+  postgres_data:
