@@ -6,6 +6,13 @@ export interface TarotCard {
   meaning: string;
   reversedMeaning: string;
   keywords: string[];
+  story: string;
+  uprightDetail: string;
+  reversedDetail: string;
+  loveUpright: string;
+  loveReversed: string;
+  careerUpright: string;
+  careerReversed: string;
 }
 
 export interface TarotDrawRecord {

@@ -11,7 +11,7 @@ import {
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import { DreamChatService } from './dream-chat.service';
 import { SendMessageDto } from './dto';
-import type { ChatMessage, ListResponse } from '@shared/api.interface';
+import type { ChatMessage, ListResponse, TarotChatDrawResult } from '@shared/api.interface';
 
 @Controller('api/dream-chat')
 export class DreamChatController {
@@ -38,7 +38,7 @@ export class DreamChatController {
   @NeedLogin()
   async sendMessage(
     @Body() dto: SendMessageDto,
-  ): Promise<{ userMessage: ChatMessage; dreamMessage: ChatMessage }> {
+  ): Promise<{ userMessage: ChatMessage; dreamMessage: ChatMessage } | TarotChatDrawResult> {
     return this.dreamChatService.sendMessage(dto.content, dto.messageType);
   }
 
@@ -60,7 +60,7 @@ export class DreamChatController {
   @NeedLogin()
   async drawTarot(
     @Body() dto: { context?: string },
-  ): Promise<import('@shared/api.interface').TarotChatDrawResult> {
+  ): Promise<TarotChatDrawResult> {
     return this.dreamChatService.drawTarotInChat(dto.context ?? '');
   }
 }

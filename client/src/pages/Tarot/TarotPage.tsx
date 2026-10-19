@@ -282,12 +282,23 @@ const TarotPage = () => {
         {/* 牌意解读 + 梦角消息（抽到牌后显示） */}
         {drawnCard && isFlipped && (
           <div className="mb-6 space-y-3 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* 牌面故事 */}
+            <div className="glass-card rounded-2xl p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <Sparkles className="size-4 text-amber-300" />
+                <span className="text-sm font-semibold text-white">牌面故事</span>
+              </div>
+              <p className="text-sm leading-relaxed text-white/60">
+                {drawnCard.card.story}
+              </p>
+            </div>
+
             {/* 牌意解读 */}
             <div className="glass-card rounded-2xl p-4">
               <div className="mb-2 flex items-center gap-2">
                 <BookOpen className="size-4 text-purple-300" />
                 <span className="text-sm font-semibold text-white">
-                  牌意解读
+                  {drawnCard.isReversed ? '逆位解读' : '正位解读'}
                 </span>
                 <Badge
                   variant="outline"
@@ -302,9 +313,45 @@ const TarotPage = () => {
               </div>
               <p className="text-sm leading-relaxed text-white/70">
                 {drawnCard.isReversed
-                  ? drawnCard.card.reversedMeaning
-                  : drawnCard.card.meaning}
+                  ? drawnCard.card.reversedDetail
+                  : drawnCard.card.uprightDetail}
               </p>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {drawnCard.card.keywords.map((kw: string) => (
+                  <span
+                    key={kw}
+                    className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/70"
+                  >
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* 感情 & 事业 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="glass-card rounded-2xl p-3">
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <Heart className="size-3.5 text-pink-400" />
+                  <span className="text-xs font-semibold text-white">感情</span>
+                </div>
+                <p className="text-xs leading-relaxed text-white/60">
+                  {drawnCard.isReversed
+                    ? drawnCard.card.loveReversed
+                    : drawnCard.card.loveUpright}
+                </p>
+              </div>
+              <div className="glass-card rounded-2xl p-3">
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <Briefcase className="size-3.5 text-blue-400" />
+                  <span className="text-xs font-semibold text-white">事业</span>
+                </div>
+                <p className="text-xs leading-relaxed text-white/60">
+                  {drawnCard.isReversed
+                    ? drawnCard.card.careerReversed
+                    : drawnCard.card.careerUpright}
+                </p>
+              </div>
             </div>
 
             {/* 梦角消息 */}
@@ -329,7 +376,7 @@ const TarotPage = () => {
                      {dreamRoleName}想说...
                    </span>
                  </div>
-                <p className="text-sm leading-relaxed text-white/80">
+                <p className="text-sm leading-relaxed text-white/80 whitespace-pre-wrap">
                   {drawnCard.dreamMessage}
                 </p>
               </div>

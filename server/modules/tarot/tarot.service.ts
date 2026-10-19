@@ -1,15 +1,19 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { count, desc, eq } from 'drizzle-orm';
-import { tarotDraws } from '@server/database/schema';
-import { TAROT_CARDS, getDreamMessage } from '@server/common/tarot-cards';
+import { tarotDraws, userSettings, aiSettings as aiSettingsTable } from '@server/database/schema';
+import { TAROT_CARDS, getFallbackTarotReply } from '@server/common/tarot-cards';
+import { AiService } from '@server/common/ai.service';
 import type { TarotCard, TarotDrawRecord, TarotDrawResponse } from '@shared/api.interface';
 
 @Injectable()
 export class TarotService {
   private readonly logger = new Logger(TarotService.name);
 
-  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase) {}
+  constructor(
+    @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
+    private readonly aiService: AiService,
+  ) {}
 
   getAllCards(): TarotCard[] {
     return TAROT_CARDS.map((card) => ({
@@ -20,6 +24,13 @@ export class TarotService {
       meaning: card.meaning,
       reversedMeaning: card.reversedMeaning,
       keywords: card.keywords,
+      story: card.story,
+      uprightDetail: card.uprightDetail,
+      reversedDetail: card.reversedDetail,
+      loveUpright: card.loveUpright,
+      loveReversed: card.loveReversed,
+      careerUpright: card.careerUpright,
+      careerReversed: card.careerReversed,
     }));
   }
 
@@ -77,8 +88,26 @@ export class TarotService {
     const randomIndex = Math.floor(Math.random() * TAROT_CARDS.length);
     const cardData = TAROT_CARDS[randomIndex];
     const isReversed = Math.random() < 0.5;
-    const dreamMessage = getDreamMessage(cardData.name, isReversed);
-    const meaning = isReversed ? cardData.reversedMeaning : cardData.meaning;
+    const detail = isReversed ? cardData.reversedDetail : cardData.uprightDetail;
+
+    const dreamRoleInfo = await this.getDreamRoleInfo();
+    const aiDreamMsg = await this.aiService.generateTarotInterpretation(
+      {
+        name: cardData.name,
+        isReversed,
+        story: cardData.story,
+        uprightDetail: cardData.uprightDetail,
+        reversedDetail: cardData.reversedDetail,
+        loveUpright: cardData.loveUpright,
+        loveReversed: cardData.loveReversed,
+        careerUpright: cardData.careerUpright,
+        careerReversed: cardData.careerReversed,
+        keywords: cardData.keywords,
+      },
+      context,
+      dreamRoleInfo.name,
+    );
+    const dreamMessage = aiDreamMsg || getFallbackTarotReply(cardData.name, isReversed, context);
 
     const inserted = await this.db
       .insert(tarotDraws)
@@ -87,7 +116,7 @@ export class TarotService {
         cardNumber: cardData.number,
         isReversed,
         position: 'single',
-        message: meaning,
+        message: detail,
         dreamMessage,
         context: context || 'general',
       })
@@ -101,6 +130,13 @@ export class TarotService {
       meaning: cardData.meaning,
       reversedMeaning: cardData.reversedMeaning,
       keywords: cardData.keywords,
+      story: cardData.story,
+      uprightDetail: cardData.uprightDetail,
+      reversedDetail: cardData.reversedDetail,
+      loveUpright: cardData.loveUpright,
+      loveReversed: cardData.loveReversed,
+      careerUpright: cardData.careerUpright,
+      careerReversed: cardData.careerReversed,
     };
 
     return {
@@ -109,5 +145,23 @@ export class TarotService {
       dreamMessage,
       recordId: inserted[0].id,
     };
+  }
+
+  private async getDreamRoleInfo(): Promise<{ name: string; systemPrompt: string }> {
+    try {
+      const [settingsRow, aiRow] = await Promise.all([
+        this.db.select().from(userSettings).limit(1),
+        this.db
+          .select({ systemPrompt: aiSettingsTable.systemPrompt })
+          .from(aiSettingsTable)
+          .limit(1),
+      ]);
+      return {
+        name: settingsRow[0]?.dreamRoleName || '梦角',
+        systemPrompt: aiRow[0]?.systemPrompt || '',
+      };
+    } catch {
+      return { name: '梦角', systemPrompt: '' };
+    }
   }
 }

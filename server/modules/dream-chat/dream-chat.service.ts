@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DRIZZLE_DATABASE, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { count, desc, eq } from 'drizzle-orm';
 import { dreamChatMessages, tarotDraws, userSettings, aiSettings as aiSettingsTable } from '@server/database/schema';
-import { DREAM_RESPONSES, TAROT_CARDS, getDreamMessage } from '@server/common/tarot-cards';
+import { TAROT_CARDS, getCardByName, getFallbackTarotReply, DREAM_RESPONSES } from '@server/common/tarot-cards';
 import { AiService } from '@server/common/ai.service';
 import type { ChatMessage, ListResponse, TarotChatDrawResult } from '@shared/api.interface';
 
@@ -46,7 +46,18 @@ export class DreamChatService {
   async sendMessage(
     content: string,
     messageType = 'text',
-  ): Promise<{ userMessage: ChatMessage; dreamMessage: ChatMessage }> {
+  ): Promise<{ userMessage: ChatMessage; dreamMessage: ChatMessage } | TarotChatDrawResult> {
+    const trimmed = content.trim();
+
+    if (/抽牌|抽一张|占卜|塔罗|帮我抽/.test(trimmed)) {
+      let context = 'general';
+      if (/感情|爱情|恋爱|喜欢/.test(trimmed)) context = 'love';
+      else if (/工作|事业|职业|学业/.test(trimmed)) context = 'career';
+      else if (/财运|钱|财富|收入/.test(trimmed)) context = 'wealth';
+      else if (/今日|今天|运势|运气/.test(trimmed)) context = 'daily';
+      return this.drawTarotInChat(context, trimmed);
+    }
+
     const userInserted = await this.db
       .insert(dreamChatMessages)
       .values({
@@ -66,26 +77,25 @@ export class DreamChatService {
       createdAt: userRow.createdAt.toISOString(),
     };
 
+    const dreamRoleInfo = await this.getDreamRoleInfo();
+    const history = await this.getRecentHistory(8);
+    const aiReply = await this.aiService.generateDreamReply(
+      content,
+      dreamRoleInfo.name,
+      dreamRoleInfo.systemPrompt,
+      history,
+    );
+
     let replyContent = '';
-    if (content.includes('抽牌') || content.toLowerCase().includes('tarot')) {
-      replyContent =
-        '想要抽牌吗？去塔罗牌页面看看吧，我会在那里为你解读哦～每一张牌都有它的故事。';
+    if (aiReply) {
+      replyContent = aiReply;
     } else {
-      const dreamRoleInfo = await this.getDreamRoleInfo();
-      const aiReply = await this.aiService.generateDreamReply(
-        content,
-        dreamRoleInfo.name,
-        dreamRoleInfo.systemPrompt,
-      );
-      if (aiReply) {
-        replyContent = aiReply;
-      } else {
-        const allResponses = [
-          ...DREAM_RESPONSES.comfort,
-          ...DREAM_RESPONSES.encouragement,
-        ];
-        replyContent = allResponses[Math.floor(Math.random() * allResponses.length)];
-      }
+      const allResponses = [
+        ...DREAM_RESPONSES.comfort,
+        ...DREAM_RESPONSES.encouragement,
+        ...DREAM_RESPONSES.greeting,
+      ];
+      replyContent = allResponses[Math.floor(Math.random() * allResponses.length)];
     }
 
     const dreamInserted = await this.db
@@ -124,21 +134,34 @@ export class DreamChatService {
     await this.db.delete(dreamChatMessages);
   }
 
-  async drawTarotInChat(context: string): Promise<TarotChatDrawResult> {
+  async drawTarotInChat(context: string, userQuery?: string): Promise<TarotChatDrawResult> {
     const randomIndex = Math.floor(Math.random() * TAROT_CARDS.length);
     const cardData = TAROT_CARDS[randomIndex];
     const isReversed = Math.random() < 0.5;
-    const baseDreamMessage = getDreamMessage(cardData.name, isReversed);
     const meaning = isReversed ? cardData.reversedMeaning : cardData.meaning;
+    const detail = isReversed ? cardData.reversedDetail : cardData.uprightDetail;
+
     const dreamRoleInfo = await this.getDreamRoleInfo();
+    const history = await this.getRecentHistory(6);
+
     const aiDreamMsg = await this.aiService.generateTarotInterpretation(
-      cardData.name,
-      isReversed,
-      meaning,
-      context,
+      {
+        name: cardData.name,
+        isReversed,
+        story: cardData.story,
+        uprightDetail: cardData.uprightDetail,
+        reversedDetail: cardData.reversedDetail,
+        loveUpright: cardData.loveUpright,
+        loveReversed: cardData.loveReversed,
+        careerUpright: cardData.careerUpright,
+        careerReversed: cardData.careerReversed,
+        keywords: cardData.keywords,
+      },
+      userQuery || context,
       dreamRoleInfo.name,
+      history,
     );
-    const finalDreamMessage = aiDreamMsg || baseDreamMessage;
+    const finalDreamMessage = aiDreamMsg || getFallbackTarotReply(cardData.name, isReversed, context);
 
     const drawInserted = await this.db
       .insert(tarotDraws)
@@ -147,18 +170,20 @@ export class DreamChatService {
         cardNumber: cardData.number,
         isReversed,
         position: 'single',
-        message: meaning,
+        message: detail,
         dreamMessage: finalDreamMessage,
         context: context || 'chat',
       })
       .returning({ id: tarotDraws.id });
     const drawId = drawInserted[0].id;
 
+    const displayContent = userQuery && userQuery.trim() ? userQuery.trim() : (context === 'general' ? '抽一张牌看看' : `抽一张牌（${this.getContextLabel(context)}）`);
+
     const userInserted = await this.db
       .insert(dreamChatMessages)
       .values({
         role: 'user',
-        content: context ? `抽一张牌（${context}）` : '抽一张牌',
+        content: displayContent,
         messageType: 'text',
       })
       .returning();
@@ -169,6 +194,13 @@ export class DreamChatService {
       isReversed,
       meaning,
       keywords: cardData.keywords,
+      story: cardData.story,
+      uprightDetail: cardData.uprightDetail,
+      reversedDetail: cardData.reversedDetail,
+      loveUpright: cardData.loveUpright,
+      loveReversed: cardData.loveReversed,
+      careerUpright: cardData.careerUpright,
+      careerReversed: cardData.careerReversed,
     });
 
     const tarotInserted = await this.db
@@ -224,5 +256,40 @@ export class DreamChatService {
     } catch {
       return { name: '梦角', systemPrompt: '' };
     }
+  }
+
+  private async getRecentHistory(limit: number): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    try {
+      const rows = await this.db
+        .select()
+        .from(dreamChatMessages)
+        .orderBy(desc(dreamChatMessages.createdAt))
+        .limit(limit * 2)
+        .where(eq(dreamChatMessages.messageType, 'text'));
+
+      const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      for (const row of rows) {
+        if (row.role === 'user') {
+          history.unshift({ role: 'user', content: row.content });
+        } else if (row.role === 'dream') {
+          history.unshift({ role: 'assistant', content: row.content });
+        }
+        if (history.length >= limit) break;
+      }
+      return history;
+    } catch {
+      return [];
+    }
+  }
+
+  private getContextLabel(context: string): string {
+    const map: Record<string, string> = {
+      daily: '今日运势',
+      love: '感情',
+      career: '事业',
+      wealth: '财运',
+      general: '综合',
+    };
+    return map[context] || context;
   }
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Send, Sparkles, Circle } from 'lucide-react';
+import { Send, Sparkles, Circle, ChevronDown, ChevronUp, BookOpen, Heart, Briefcase } from 'lucide-react';
 import { logger } from '@lark-apaas/client-toolkit/logger';
 import * as dreamChatApi from '@client/src/api/dream-chat';
 import { useSettings } from '@client/src/contexts/SettingsContext';
@@ -13,6 +13,13 @@ interface TarotCardData {
   isReversed: boolean;
   meaning: string;
   keywords: string[];
+  story: string;
+  uprightDetail: string;
+  reversedDetail: string;
+  loveUpright: string;
+  loveReversed: string;
+  careerUpright: string;
+  careerReversed: string;
 }
 
 const ChatPage = () => {
@@ -64,12 +71,12 @@ const ChatPage = () => {
     setIsLoading(true);
 
     try {
-      const replyMessages = await dreamChatApi.sendMessage(trimmed, 'text');
+      const result = await dreamChatApi.sendMessage(trimmed, 'text');
       setMessages((prev: ChatMessage[]) => {
         const filtered = prev.filter(
           (m: ChatMessage) => !m.id.startsWith('temp-'),
         );
-        return [...filtered, ...replyMessages];
+        return [...filtered, ...result];
       });
     } catch (error: unknown) {
       logger.error('发送消息失败', error);
@@ -84,6 +91,7 @@ const ChatPage = () => {
   const handleDrawTarot = async () => {
     if (isDrawing) return;
     setIsDrawing(true);
+    setIsLoading(true);
 
     try {
       const result = await dreamChatApi.drawTarotInChat('general');
@@ -92,6 +100,7 @@ const ChatPage = () => {
       logger.error('抽牌失败', error);
     } finally {
       setIsDrawing(false);
+      setIsLoading(false);
     }
   };
 
@@ -254,6 +263,7 @@ const MessageBubble = ({ message, dreamRoleAvatar, dreamRoleAvatarColor, dreamRo
   }
 
   if (message.messageType === 'tarot') {
+    const [expanded, setExpanded] = useState(false);
     let cardData: TarotCardData | null = null;
     try {
       cardData = JSON.parse(message.content) as TarotCardData;
@@ -272,10 +282,14 @@ const MessageBubble = ({ message, dreamRoleAvatar, dreamRoleAvatarColor, dreamRo
       );
     }
 
+    const detail = cardData.isReversed ? cardData.reversedDetail : cardData.uprightDetail;
+    const loveDetail = cardData.isReversed ? cardData.loveReversed : cardData.loveUpright;
+    const careerDetail = cardData.isReversed ? cardData.careerReversed : cardData.careerUpright;
+
     return (
       <div className="flex items-start gap-2">
         <DreamAvatar />
-        <div className="glass-card rounded-2xl rounded-tl-md p-3.5 max-w-[80%] w-64">
+        <div className="glass-card rounded-2xl rounded-tl-md p-3.5 max-w-[82%] w-72">
           <div className="flex items-start gap-3">
             <div
               className="w-14 h-20 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0 relative overflow-hidden"
@@ -295,7 +309,7 @@ const MessageBubble = ({ message, dreamRoleAvatar, dreamRoleAvatarColor, dreamRo
                 </span>
               </div>
               <div className="text-xs text-white/60 mt-1 line-clamp-2 leading-relaxed">
-                {cardData.meaning}
+                {detail}
               </div>
               <div className="flex gap-1 mt-2 flex-wrap">
                 {cardData.keywords.slice(0, 3).map((kw: string) => (
@@ -310,6 +324,68 @@ const MessageBubble = ({ message, dreamRoleAvatar, dreamRoleAvatarColor, dreamRo
               </div>
             </div>
           </div>
+
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-full mt-3 flex items-center justify-center gap-1 text-[11px] text-white/50 hover:text-white/70 transition-colors pt-2 border-t border-white/10"
+            aria-label={expanded ? '收起解读' : '展开完整解读'}
+          >
+            {expanded ? (
+              <><ChevronUp size={12} /> 收起</>  
+            ) : (
+              <><ChevronDown size={12} /> 查看完整解读</>
+            )}
+          </button>
+
+          {expanded && (
+            <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              {/* 牌面故事 */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Sparkles size={11} className="text-amber-300" />
+                  <span className="text-xs font-medium text-white/80">牌面故事</span>
+                </div>
+                <p className="text-xs leading-relaxed text-white/50">
+                  {cardData.story}
+                </p>
+              </div>
+
+              {/* 详细解读 */}
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <BookOpen size={11} className="text-purple-300" />
+                  <span className="text-xs font-medium text-white/80">
+                    {cardData.isReversed ? '逆位详解' : '正位详解'}
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed text-white/60">
+                  {detail}
+                </p>
+              </div>
+
+              {/* 感情事业 */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-white/5 p-2">
+                  <div className="flex items-center gap-1 mb-1">
+                    <Heart size={10} className="text-pink-400" />
+                    <span className="text-[11px] font-medium text-white/70">感情</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-white/50">
+                    {loveDetail}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-white/5 p-2">
+                  <div className="flex items-center gap-1 mb-1">
+                    <Briefcase size={10} className="text-blue-400" />
+                    <span className="text-[11px] font-medium text-white/70">事业</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-white/50">
+                    {careerDetail}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -29,8 +29,11 @@ export async function sendMessage(
       content,
       messageType: messageType ?? 'text',
     });
-    const { userMessage, dreamMessage } = response.data;
-    return [userMessage, dreamMessage];
+    const data = response.data;
+    if (data.tarotMessage) {
+      return [data.userMessage, data.tarotMessage, data.dreamMessage];
+    }
+    return [data.userMessage, data.dreamMessage];
   } catch (error: unknown) {
     logger.error('sendMessage failed', error);
     throw error;
